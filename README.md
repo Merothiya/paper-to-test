@@ -84,3 +84,4 @@ node harness.js     # Full 89-page exam parser verification
 ## 🔒 Privacy & Security
 
 Everything runs **100% locally in your browser**. No PDFs, images, questions, or candidate answers are ever transmitted to any external server.
+
