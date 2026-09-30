@@ -1,0 +1,15 @@
+{
+  "name": "excam",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test_keys.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "pdfjs-dist": "^3.11.174"
+  }
+}

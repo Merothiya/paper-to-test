@@ -1,0 +1,1592 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Paper to Test</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.1.1/tesseract.min.js"></script>
+</head><body>
+<main>
+<h1>Paper to Test</h1>
+<p class="mu">Choose a question-paper PDF. It automatically extracts questions, multi-column layouts, inline options, tables, answers and images, supports scanned PDF OCR, lets you edit anything, and downloads a self-contained HTML test you can host anywhere.</p>
+
+<div class="card">
+  <div class="grid-2">
+    <label>Question paper PDF
+      <input type="file" id="f" accept="application/pdf">
+    </label>
+    <label>Answer key PDF (optional, if separate)
+      <input type="file" id="kf" accept="application/pdf">
+    </label>
+  </div>
+
+  <label>Or paste the answer key
+    <textarea id="kt" rows="2" placeholder="1-B 2-D 3-A ... or 1.C 2.A ... or plain string BDACB..."></textarea>
+  </label>
+
+  <div class="rw3">
+    <label>Test title<input id="ti" value="Mock test"></label>
+    <label>Minutes<input id="mi" type="number" value="180"></label>
+    <label>Layout
+      <select id="lm">
+        <option value="auto">Auto-detect columns</option>
+        <option value="1">1 Column (Standard)</option>
+        <option value="2">2 Columns</option>
+        <option value="3">3 Columns</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="rw2">
+    <label>Image detection
+      <select id="sm">
+        <option value="a">Crop embedded images</option>
+        <option value="s">Snapshot every question (math, vectors, tables)</option>
+      </select>
+    </label>
+    <label>Text extraction / OCR
+      <select id="em">
+        <option value="auto">Auto (Native text + OCR fallback)</option>
+        <option value="pdf">Native PDF text only</option>
+        <option value="ocr">Force OCR (Tesseract.js)</option>
+      </select>
+    </label>
+  </div>
+
+  <div style="margin-top:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <button class="p" id="go" style="font-size:1.05rem;padding:9px 20px">Build test</button>
+    <button type="button" class="btn" id="load-demo-btn" style="border-color:var(--a);color:var(--a);font-weight:700;padding:9px 16px" title="Instantly load pre-parsed 200 MCQ INI CET exam">⚡ Try Demo Exam (INI CET 200 Questions)</button>
+    <label style="font-weight:normal;display:inline-flex;align-items:center;gap:6px;cursor:pointer;margin:0">
+      <input type="checkbox" id="auto-run" checked style="width:auto;margin:0"> Automatically launch test after building
+    </label>
+    <span id="pg" class="mu" style="font-weight:600"></span>
+  </div>
+</div>
+
+<div id="out"></div>
+</main>
+
+<!-- Preview Modal -->
+<div id="pv" hidden>
+  <div class="pv-bar">
+    <span style="font-weight:700">Test Preview</span>
+    <button id="cl" class="btn">Close preview</button>
+  </div>
+  <iframe title="Preview"></iframe>
+</div>
+
+<!-- Visual PDF Cropper Modal -->
+<div id="crop-modal" hidden>
+  <div class="crop-dialog">
+    <div class="crop-header">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <b id="crop-title">Crop Image for Question</b>
+        <span class="mu">| Page</span>
+        <button id="crop-prev" class="btn" style="padding:4px 10px">&lt;</button>
+        <span id="crop-page-num" style="font-weight:700">1</span> / <span id="crop-total-pages">1</span>
+        <button id="crop-next" class="btn" style="padding:4px 10px">&gt;</button>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button id="crop-cancel" class="btn">Cancel</button>
+        <button id="crop-save" class="p" style="padding:6px 14px">Attach Crop</button>
+      </div>
+    </div>
+    <div class="crop-info mu">Click and drag with your mouse/touch on the PDF page below to select the area to crop.</div>
+    <div class="crop-viewport" id="crop-viewport">
+      <div class="crop-canvas-wrapper" id="crop-wrapper">
+        <canvas id="crop-canvas"></canvas>
+        <div id="crop-box" hidden></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="img-upload-input" accept="image/*" style="display:none">
+
+<script>
+const VARS = ':root{--b:#EEF2F5;--c:#fff;--i:#15202B;--m:#5B6B7A;--l:#D3DBE2;--a:#0B6E75;--t:#fff;--g:#1E7F4F;--r:#B3261E;--v:#6B4FBB;--s:#DDF1F2}@media(prefers-color-scheme:dark){:root{--b:#0F1519;--c:#182129;--i:#E6EDF2;--m:#98A8B5;--l:#2C3944;--a:#4FC1C9;--t:#04262A;--g:#5FD08F;--r:#FF8A80;--v:#B6A2FF;--s:#1C3A3E}}*{box-sizing:border-box}body{margin:0;background:var(--b);color:var(--i);font:16px/1.5 "Atkinson Hyperlegible",system-ui,sans-serif}button{font:inherit;color:inherit;cursor:pointer}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid var(--a);outline-offset:2px}';
+
+const BCSS = `html{padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}main{max-width:920px;margin:0 auto;padding:16px}h1{margin:.2em 0}.mu{color:var(--m);font-size:.92rem}.card{background:var(--c);border:1px solid var(--l);border-radius:10px;padding:16px;margin-bottom:14px}label{display:grid;gap:4px;margin:10px 0;font-weight:700;font-size:.9rem}input,select,textarea{font:inherit;padding:8px 10px;border:1.5px solid var(--l);border-radius:8px;background:var(--b);color:var(--i);width:100%}.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}.rw2{display:grid;grid-template-columns:1fr 1fr;gap:12px}.rw3{display:grid;grid-template-columns:1fr 120px 180px;gap:12px}@media(max-width:700px){.grid-2,.rw2,.rw3{grid-template-columns:1fr}}button.p,.btn{border:1.5px solid var(--l);background:var(--c);border-radius:8px;padding:8px 14px;font-weight:600}button.p{background:var(--a);border-color:var(--a);color:var(--t)}.btn:hover{background:color-mix(in srgb,var(--l) 25%,var(--c))}.w{color:var(--r);font-weight:600}.th{height:48px;border-radius:4px;background:#fff;border:1px solid var(--l);object-fit:contain;vertical-align:middle;margin:2px 4px 2px 0}.x{border:0;background:none;color:var(--r);font-weight:700;padding:2px 6px;cursor:pointer}#pv{position:fixed;inset:0;background:var(--b);z-index:99;display:flex;flex-direction:column}#pv[hidden]{display:none}#pv iframe{flex:1;border:0;width:100%}.pv-bar{background:var(--c);border-bottom:1px solid var(--l);display:flex;align-items:center;justify-content:space-between;padding:10px 16px}.qc{background:var(--c);border:1.5px solid var(--l);border-radius:10px;padding:14px;margin-bottom:12px}.qc.no-ans{border-left:5px solid var(--r)}.qc.has-ans{border-left:5px solid var(--g)}.qh{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}.qh b{font-size:1.1rem}.q-stem{width:100%;font:inherit;line-height:1.5;margin:8px 0;resize:vertical}.opts-list{display:grid;gap:6px;margin:10px 0}.opt-row{display:grid;grid-template-columns:2.2em 1fr auto;gap:8px;align-items:center}.opt-row b{display:inline-grid;place-items:center;width:2em;height:2em;border-radius:50%;background:var(--b);border:1.5px solid var(--l);font-size:.85rem}.del-opt{border:0;background:none;color:var(--r);font-size:1.2rem;cursor:pointer;padding:0 6px}.imgs-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;padding-top:8px;border-top:1px dashed var(--l)}#crop-modal{position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(3px);z-index:100;display:grid;place-items:center;padding:14px}#crop-modal[hidden]{display:none}.crop-dialog{background:var(--c);border-radius:12px;width:100%;max-width:960px;max-height:92vh;display:flex;flex-direction:column;border:1px solid var(--l);box-shadow:0 10px 30px rgba(0,0,0,.35)}.crop-header{padding:12px 16px;border-bottom:1px solid var(--l);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}.crop-info{padding:8px 16px;background:var(--b);font-size:.85rem}.crop-viewport{flex:1;overflow:auto;padding:16px;background:var(--b);display:grid;place-items:center}.crop-canvas-wrapper{position:relative;display:inline-block;user-select:none}#crop-canvas{display:block;max-width:100%;box-shadow:0 2px 8px rgba(0,0,0,.15);border-radius:4px}#crop-box{position:absolute;border:2px dashed var(--a);background:color-mix(in srgb,var(--a) 25%,transparent);pointer-events:none}`;
+
+document.head.insertAdjacentHTML('beforeend', '<style>' + VARS + BCSS + '</style>');
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+const E = s => String(s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const say = t => { const el = $('#pg'); if (el) el.textContent = t; };
+const delay = ms => new Promise(r => setTimeout(r, ms || 0));
+
+// Global error handlers to surface any issue immediately in the UI
+window.addEventListener('error', e => {
+  const el = $('#pg');
+  if (el) el.innerHTML = '<span style="color:var(--r);font-weight:700">Error: ' + E(e.message || 'Script error') + '</span>';
+});
+window.addEventListener('unhandledrejection', e => {
+  const el = $('#pg');
+  if (el) el.innerHTML = '<span style="color:var(--r);font-weight:700">Error: ' + E(e.reason?.message || e.reason || 'Operation failed') + '</span>';
+});
+
+const W = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+let workerInitPromise = null;
+function initPdfWorker() {
+  if (workerInitPromise) return workerInitPromise;
+  workerInitPromise = (async () => {
+    // Wait briefly if pdfjsLib script tag is still resolving
+    for (let i = 0; i < 40; i++) {
+      if (typeof pdfjsLib !== 'undefined') break;
+      await delay(100);
+    }
+    if (typeof pdfjsLib === 'undefined') {
+      throw new Error('PDF.js library failed to load. Check your internet connection or CDN availability.');
+    }
+    try {
+      const res = await fetch(W);
+      if (res && (res.ok || res.status === undefined) && typeof res.blob === 'function') {
+        const blob = await res.blob();
+        pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
+        return;
+      }
+    } catch (e) {
+      console.warn('Worker blob fetch failed, falling back to direct URL:', e);
+    }
+    try {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = W;
+    } catch (e) {
+      console.warn('Could not set workerSrc directly:', e);
+    }
+  })();
+  return workerInitPromise;
+}
+
+const mul = (a, b) => [a[0]*b[0]+a[1]*b[2], a[0]*b[1]+a[1]*b[3], a[2]*b[0]+a[3]*b[2], a[2]*b[1]+a[3]*b[3], a[4]*b[0]+a[5]*b[2]+b[4], a[4]*b[1]+a[5]*b[3]+b[5]];
+const toIdx = c => /\d/.test(c) ? +c - 1 : c.toUpperCase().charCodeAt(0) - 65;
+
+let ocrWorker = null;
+async function getOcrWorker(prog) {
+  if (ocrWorker) return ocrWorker;
+  if (typeof Tesseract === 'undefined') throw new Error('Tesseract OCR library not loaded.');
+  prog('Loading Tesseract OCR engine...');
+  ocrWorker = await Tesseract.createWorker();
+  await ocrWorker.loadLanguage('eng');
+  await ocrWorker.initialize('eng');
+  return ocrWorker;
+}
+
+/* 1. PDF Reader: Multi-column analysis, image boxes, and OCR fallback */
+async function read(file, prog, colMode, ocrMode) {
+  await initPdfWorker();
+  prog('Opening PDF...');
+  await delay(10);
+  const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+  const n = pdf.numPages, L = [], I = [], H = {}, Wd = {}, O = pdfjsLib.OPS;
+
+  let needOcr = ocrMode === 'ocr';
+  if (ocrMode === 'auto') {
+    prog('Inspecting text layer in PDF...');
+    await delay(10);
+    let textItemsSample = 0;
+    const samplePages = Math.min(n, 3);
+    for (let p = 1; p <= samplePages; p++) {
+      const pg = await pdf.getPage(p);
+      const tc = await pg.getTextContent();
+      textItemsSample += tc.items.filter(t => t.str && t.str.trim()).length;
+    }
+    if (textItemsSample / samplePages < 15) {
+      needOcr = true;
+    }
+  }
+
+  const S_SCALE = 2;
+
+  for (let p = 1; p <= n; p++) {
+    const pg = await pdf.getPage(p);
+    const vp = pg.getViewport({ scale: 1 });
+    const h = vp.height, w = vp.width;
+    H[p] = h; Wd[p] = w;
+    let numCols = 1;
+    let splitX = w * 0.5;
+
+    if (needOcr) {
+      prog('OCR reading page ' + p + ' of ' + n + '...');
+      await delay(10);
+      const cv = document.createElement('canvas');
+      cv.width = vp.width * S_SCALE;
+      cv.height = vp.height * S_SCALE;
+      const cx = cv.getContext('2d');
+      cx.fillStyle = '#fff';
+      cx.fillRect(0, 0, cv.width, cv.height);
+      await pg.render({ canvasContext: cx, viewport: pg.getViewport({ scale: S_SCALE }) }).promise;
+
+      const worker = await getOcrWorker(prog);
+      const res = await worker.recognize(cv);
+      if (res && res.data && res.data.lines) {
+        const isTwoCol = colMode === '2' || (colMode === 'auto' && res.data.lines.some(l => (l.bbox.x0 / S_SCALE) > w * 0.55));
+        for (const line of res.data.lines) {
+          const text = (line.text || '').trim();
+          if (!text) continue;
+          const b = line.bbox;
+          const y = b.y0 / S_SCALE;
+          const x0 = b.x0 / S_SCALE;
+          const lw = (b.x1 - b.x0) / S_SCALE;
+          const colIdx = isTwoCol && x0 >= w * 0.5 ? 1 : 0;
+          const ySeq = colIdx === 1 ? y + h : y;
+          L.push({ p, y, x: x0, w: lw, col: colIdx, ySeq, t: text, ocr: true });
+        }
+      }
+    } else {
+      prog('Reading page ' + p + ' of ' + n + '...');
+      if (p % 5 === 0) await delay(10);
+      const its = (await pg.getTextContent()).items.filter(t => t.transform && Math.abs(t.transform[1]) < .05 && Math.abs(t.transform[2]) < .05 && t.str && t.str.trim() !== '');
+
+      numCols = 1;
+      splitX = w * 0.5;
+      if (colMode === '2') {
+        numCols = 2;
+      } else if (colMode === '3') {
+        numCols = 3;
+      } else if (colMode === 'auto') {
+        const contentItems = its.filter(t => (h - t.transform[5]) > h * 0.07 && (h - t.transform[5]) < h * 0.93);
+        if (contentItems.length >= 15) {
+          let bestScore = -Infinity;
+          for (let gx = w * 0.38; gx <= w * 0.62; gx += w * 0.015) {
+            let left = 0, right = 0, crossing = 0;
+            for (const t of contentItems) {
+              const x0 = t.transform[4], x1 = x0 + t.width;
+              if (x1 <= gx) left++;
+              else if (x0 >= gx) right++;
+              else crossing++;
+            }
+            const minSide = Math.min(left, right);
+            const distCenter = Math.abs(gx - w * 0.5) / (w * 0.5);
+            const score = minSide * 2 - crossing * 5 - distCenter * 10;
+            if (score > bestScore && left >= contentItems.length * 0.22 && right >= contentItems.length * 0.22 && crossing <= contentItems.length * 0.15) {
+              bestScore = score;
+              splitX = gx;
+            }
+          }
+          if (bestScore > -Infinity) numCols = 2;
+        }
+      }
+
+      const cols = [];
+      if (numCols === 1) {
+        cols.push({ items: its, colIdx: 0, yOffset: 0 });
+      } else if (numCols === 2) {
+        const leftItems = [], rightItems = [];
+        for (const t of its) {
+          const midX = t.transform[4] + t.width / 2;
+          if (midX < splitX) leftItems.push(t);
+          else rightItems.push(t);
+        }
+        cols.push({ items: leftItems, colIdx: 0, yOffset: 0 });
+        cols.push({ items: rightItems, colIdx: 1, yOffset: h });
+      } else if (numCols === 3) {
+        const c1 = [], c2 = [], c3 = [];
+        const s1 = w * 0.33, s2 = w * 0.66;
+        for (const t of its) {
+          const midX = t.transform[4] + t.width / 2;
+          if (midX < s1) c1.push(t);
+          else if (midX < s2) c2.push(t);
+          else c3.push(t);
+        }
+        cols.push({ items: c1, colIdx: 0, yOffset: 0 });
+        cols.push({ items: c2, colIdx: 1, yOffset: h });
+        cols.push({ items: c3, colIdx: 2, yOffset: 2 * h });
+      }
+
+      for (const col of cols) {
+        const rows = [];
+        for (const t of col.items) {
+          const y = t.transform[5];
+          const r = rows.find(r => Math.abs(r.y - y) < 3.5);
+          if (r) r.i.push(t); else rows.push({ y, i: [t] });
+        }
+        rows.sort((a, b) => b.y - a.y).forEach(r => {
+          r.i.sort((a, b) => a.transform[4] - b.transform[4]);
+          let s = '', pe = null;
+          for (const t of r.i) {
+            const x = t.transform[4];
+            if (pe !== null && x - pe > 1.8 && !/\s$/.test(s) && !/^\s/.test(t.str)) s += ' ';
+            s += t.str;
+            pe = x + t.width;
+          }
+          s = s.replace(/\s+/g, ' ').trim();
+          if (s) {
+            const topY = h - r.y;
+            L.push({ p, y: topY, x: r.i[0].transform[4], w: pe - r.i[0].transform[4], col: col.colIdx, ySeq: topY + col.yOffset, t: s });
+          }
+        });
+      }
+    }
+
+    const ol = await pg.getOperatorList();
+    let m = [1, 0, 0, 1, 0, 0];
+    const st = [];
+    ol.fnArray.forEach((f, k) => {
+      const a = ol.argsArray[k];
+      if (f == O.save) st.push(m);
+      else if (f == O.restore) m = st.pop() || m;
+      else if (f == O.transform) m = mul(a, m);
+      else if (f == O.paintFormXObjectBegin) { st.push(m); if (a[0]) m = mul(a[0], m); }
+      else if (f == O.paintFormXObjectEnd) m = st.pop() || m;
+      else if (f == O.paintImageXObject || f == O.paintInlineImageXObject || f == O.paintImageMaskXObject || f == O.paintJpegXObject) {
+        const xs = [], ys = [];
+        for (const u of [0, 1]) for (const v of [0, 1]) {
+          xs.push(m[4] + m[0]*u + m[2]*v);
+          ys.push(m[5] + m[1]*u + m[3]*v);
+        }
+        const x0 = Math.min(...xs), x1 = Math.max(...xs), t = h - Math.max(...ys), b = h - Math.min(...ys);
+        if (x1 - x0 > 25 && b - t > 25) {
+          let ySeq = t;
+          if (colMode === '2' || (colMode === 'auto' && numCols === 2)) {
+            if (x0 >= splitX - 10) ySeq = t + h;
+          }
+          I.push({ p, x0, x1, t, b, ySeq, k: [x0, t, x1 - x0, b - t].map(Math.round).join() });
+        }
+      }
+    });
+  }
+
+  const pgs = {}, pgsNorm = {}, ic = {};
+  L.forEach(l => {
+    (pgs[l.t] = pgs[l.t] || new Set()).add(l.p);
+    const norm = l.t.replace(/\d+/g, '#').trim();
+    (pgsNorm[norm] = pgsNorm[norm] || new Set()).add(l.p);
+  });
+  I.forEach(i => { (ic[i.k] = ic[i.k] || new Set()).add(i.p); });
+
+  const cleanL = L.filter(l => {
+    const isRepeated = pgs[l.t] && pgs[l.t].size >= Math.max(3, 0.25 * n);
+    const norm = l.t.replace(/\d+/g, '#').trim();
+    const isNormRepeated = pgsNorm[norm] && pgsNorm[norm].size >= Math.max(3, 0.25 * n);
+    const inMargin = l.y < H[l.p] * 0.08 || l.y > H[l.p] * 0.92;
+    const isPageNum = inMargin && /^(?:page\s*\d+|\d+\s*(?:of|\/)\s*\d+|[-–—]\s*\d+\s*[-–—]|\d+|space\s+for\s+rough\s+work)$/i.test(l.t);
+    return !((isRepeated || isNormRepeated) && inMargin) && !isPageNum;
+  });
+
+  return {
+    pdf, n, H, Wd,
+    L: cleanL,
+    I: I.filter(i => ic[i.k].size < Math.max(3, 0.3 * n))
+  };
+}
+
+/* 2. Parser: Options, inline options, question prefix, match-the-following, and answer keys */
+function opt(t, curOptLen) {
+  let m = t.match(/^O(\d+)\s*:\s*(.*)$/i);
+  if (m) return [+m[1] - 1, m[2]];
+  m = t.match(/^\(?([A-Ea-e])[.)\]]\s*(.*)$/);
+  if (m) return [m[1].toUpperCase().charCodeAt(0) - 65, m[2] || ''];
+  m = t.match(/^\[([A-Ea-e1-5])\]\s*(.*)$/);
+  if (m) {
+    const v = m[1];
+    return [/\d/.test(v) ? +v - 1 : v.toUpperCase().charCodeAt(0) - 65, m[2] || ''];
+  }
+  m = t.match(/^\(([1-5])\)\s*(.*)$|^([1-5])\)\s+(.*)$/);
+  if (m) return [+(m[1] || m[3]) - 1, m[2] ?? m[4] ?? ''];
+  if (curOptLen > 0) {
+    m = t.match(/^([1-5])\.\s+(.*)$/);
+    if (m) return [+m[1] - 1, m[2]];
+  }
+  return null;
+}
+
+function parseInlineOpts(t, expectedIdx) {
+  const regex = /(?:^|\s+)(?:\(([A-Ea-e1-5])\)|([A-Ea-e1-5])\)|([A-Ea-e1-5])\.|\[([A-Ea-e1-5])\]|O(\d+)\s*:)\s*/g;
+  const matches = [];
+  let m;
+  while ((m = regex.exec(t)) !== null) {
+    const raw = m[1] || m[2] || m[3] || m[4] || m[5];
+    const idx = /\d/.test(raw) ? +raw - 1 : raw.toUpperCase().charCodeAt(0) - 65;
+    matches.push({ index: m.index, len: m[0].length, idx });
+  }
+  if (matches.length < 2) return null;
+  for (let i = 1; i < matches.length; i++) {
+    if (matches[i].idx !== matches[i - 1].idx + 1) return null;
+  }
+  if (expectedIdx !== undefined && matches[0].idx !== expectedIdx) return null;
+  const stem = t.slice(0, matches[0].index).trim();
+  const opts = [];
+  for (let i = 0; i < matches.length; i++) {
+    const start = matches[i].index + matches[i].len;
+    const end = i + 1 < matches.length ? matches[i + 1].index : t.length;
+    opts.push({ idx: matches[i].idx, text: t.slice(start, end).trim() });
+  }
+  return { stem, opts };
+}
+
+function matchQPrefix(t) {
+  // Reject match pairs like 1-a, 2-b, 3-c
+  if (/^\d{1,4}\s*[-–]\s*[a-zA-Z]/.test(t)) return null;
+  const regex = /^(?:(?:Ques(?:tion)?\.?\s*(?:No\.?)?|Q\.?\s*(?:No\.?)?|Item)\s*[:.-]?\s*(\d{1,4})|\[(\d{1,4})\]|\((\d{1,4})\)|(\d{1,4})\s*[.):])(?:\s*(.*))?$/i;
+  const m = t.match(regex);
+  if (!m) return null;
+  const num = +(m[1] || m[2] || m[3] || m[4]);
+  let text = (m[5] || '').trim();
+  text = text.replace(/^[:.-]+\s*/, '').trim();
+  return { num, text, hasExplicit: !!m[1] };
+}
+
+function keyMap(x) {
+  const M = {};
+  x = String(x || '').trim();
+  if (!x) return M;
+
+  // 1. Explicit numbered pairs first: "1-B", "1. B", "1:B", "1 B", "Q1: B", "1) B", "[1] B"
+  const pairMatches = [...x.matchAll(/(?:(?:Q\.?|Ques\.?|Item)?\s*\[?\(?(\d{1,4})\]?\)?\s*[\-–.:)=]\s*\(?([A-Ea-e]|[1-5])\)?)(?![A-Za-z0-9])/g)];
+  if (pairMatches.length > 0) {
+    for (const m of pairMatches) {
+      M[+m[1]] = toIdx(m[2]);
+    }
+    return M;
+  }
+
+  // 2. Space/comma separated numbered pairs: "1 B 2 D 3 A"
+  const spacedPairs = [...x.matchAll(/\b(\d{1,4})\s+([A-Ea-e]|[1-5])\b/g)];
+  if (spacedPairs.length >= 2) {
+    for (const m of spacedPairs) {
+      M[+m[1]] = toIdx(m[2]);
+    }
+    return M;
+  }
+
+  // 3. Plain sequence of letters / digits (e.g. "BDACB...", "B D A C", "B, D, A, C")
+  const cleanTokens = x.replace(/[^A-Ea-e1-5]/g, '');
+  if (cleanTokens.length > 0) {
+    cleanTokens.split('').forEach((c, i) => {
+      M[i + 1] = toIdx(c);
+    });
+  }
+  return M;
+}
+
+function parse(L0) {
+  let ki = L0.findIndex(l => /^(answer\s*keys?|answers|answer\s*sheet)\s*:?$/i.test((l.t || '').trim()) || /^answer\s*key\b/i.test((l.t || '').trim()));
+  if (ki < L0.length * 0.3) ki = -1;
+  const L = ki > 0 ? L0.slice(0, ki) : L0;
+  const key = ki > 0 ? keyMap(L0.slice(ki).map(l => (l.t || '').trim()).join(' ')) : {};
+
+  const Q = [];
+  let c = null, m;
+  let currentSub = '';
+
+  for (let i = 0; i < L.length; i++) {
+    const l = L[i];
+    const t = (l.t || '').trim();
+    if (!t) continue;
+
+    const oTest = c ? opt(t, c.o.length) : null;
+    const isCurOption = oTest && oTest[0] === c.o.length;
+
+    const qm = matchQPrefix(t);
+    let isNewQ = false;
+
+    if (qm && (!isCurOption || qm.hasExplicit)) {
+      if (Q.length === 0) {
+        if (qm.hasExplicit || qm.num === 1 || qm.num <= 5) isNewQ = true;
+      } else {
+        const lastNo = Q[Q.length - 1].no;
+        if (qm.hasExplicit) {
+          if (qm.num > lastNo || qm.num === 1) isNewQ = true;
+        } else {
+          if (qm.num === lastNo + 1) isNewQ = true;
+          else if (c && (c.o.length >= 2 || c.inl !== undefined) && (qm.num > lastNo || qm.num === 1)) isNewQ = true;
+        }
+      }
+    }
+
+    if (isNewQ) {
+      Q.push(c = {
+        no: qm.num,
+        p: l.p,
+        y: l.y,
+        col: l.col || 0,
+        ySeq: l.ySeq || l.y,
+        sub: currentSub,
+        stem: qm.text ? [qm.text] : [],
+        o: [],
+        ans: -1,
+        img: [],
+        exp: []
+      });
+      continue;
+    }
+
+    if (!c || /^Paper\s*=>/i.test(t)) continue;
+
+    if (m = t.match(/^Subject\s*:\s*(.*)/i)) { currentSub = m[1].trim(); c.sub = currentSub; continue; }
+    if (m = t.match(/^(?:Section|Part)\s*([A-Za-z0-9]+.*)/i)) { currentSub = m[0].trim(); c.sub = currentSub; continue; }
+    if (/^(Sub-?)?Topic\s*:/i.test(t)) continue;
+
+    let ansM = t.match(/^(?:correct\s+)?ans(?:wer)?\s*(?::|-|–|\.|is)\s*\(?([A-Ea-e1-5])\)?(?=[\s.,)]|$)/i);
+    if (ansM) {
+      c.inl = toIdx(ansM[1]);
+      continue;
+    }
+
+    if (/^(?:choose|select|code\s*:|correct\s+code|options?:)/i.test(t)) {
+      if (c.o.length > 0) {
+        c.o.forEach((txt, k) => c.stem.push('(' + 'ABCDE'[k] + ') ' + txt));
+        c.o = [];
+      }
+      c.stem.push(t);
+      continue;
+    }
+
+    const inline = parseInlineOpts(t, c.o.length);
+    if (inline) {
+      if (inline.stem) c.stem.push(inline.stem);
+      inline.opts.forEach(op => c.o.push(op.text));
+      continue;
+    }
+
+    const o = opt(t, c.o.length);
+    if (o) {
+      if (o[0] === 0 && c.o.length >= 2) {
+        c.o.forEach((txt, k) => c.stem.push('(' + 'ABCDE'[k] + ') ' + txt));
+        c.o = [];
+      }
+      if (o[0] === c.o.length) {
+        c.o.push(o[1]);
+        continue;
+      }
+    }
+
+    let expM = t.match(/^(?:exp(?:lanation)?|ref(?:erence)?|notes?|source|rationale|solution)\s*[:.-]\s*(.*)/i);
+    if (expM || c.inl !== undefined) {
+      const expText = expM ? (expM[1].trim() || t) : t;
+      c.exp.push(expText);
+      continue;
+    }
+
+    if (c.o.length > 0) {
+      c.o[c.o.length - 1] += ' ' + t;
+    } else {
+      c.stem.push(t);
+    }
+  }
+
+  Q.forEach((q, i) => {
+    q.stem = q.stem.join('\n').replace(/[ \t]+/g, ' ').trim();
+    q.o = q.o.map(s => s.replace(/\s+/g, ' ').trim());
+    q.exp = (q.exp || []).join('\n').trim();
+    if (q.inl !== undefined && key[q.no] === undefined) {
+      key[q.no] = q.inl;
+    }
+    q.e = Q[i + 1] || null;
+  });
+
+  return { Q, key };
+}
+
+/* 3. Image Cropping: Embedded images or full question snapshots */
+async function crop(r, Q, snap, prog) {
+  const rc = {};
+  const add = (p, o) => (rc[p] = rc[p] || []).push(o);
+  const cm = (p, y) => p * 1e5 + y;
+
+  Q.forEach(q => {
+    const s = cm(q.p, q.ySeq) - 4;
+    const en = q.e ? cm(q.e.p, q.e.ySeq) - 4 : Infinity;
+
+    if (snap) {
+      const isCol2 = q.col === 1;
+      const x0 = isCol2 ? r.Wd[q.p] * 0.48 : 0;
+      const x1 = isCol2 ? r.Wd[q.p] : (q.col === 0 && q.e && q.e.col === 1 ? r.Wd[q.p] * 0.52 : r.Wd[q.p]);
+      const topY = Math.max(0, q.y - 12);
+      const bottomY = (q.e && q.e.p === q.p && q.e.col === q.col) ? q.e.y - 12 : r.H[q.p];
+      add(q.p, { q, x0, x1, t: topY, b: bottomY });
+    } else {
+      r.I.filter(i => cm(i.p, i.ySeq) >= s && cm(i.p, i.ySeq) < en).forEach(i => {
+        add(i.p, { q, x0: i.x0 - 4, x1: i.x1 + 4, t: i.t - 4, b: i.b + 4 });
+      });
+    }
+  });
+
+  const S = 2;
+  const pagesToRender = Object.keys(rc);
+  for (let idx = 0; idx < pagesToRender.length; idx++) {
+    const p = +pagesToRender[idx];
+    prog('Rendering & cropping images, page ' + p + ' of ' + r.n);
+    if (idx % 2 === 0) await delay(10);
+    const pg = await r.pdf.getPage(p);
+    const vp = pg.getViewport({ scale: S });
+    const cv = document.createElement('canvas');
+    cv.width = vp.width; cv.height = vp.height;
+    const cx = cv.getContext('2d');
+    cx.fillStyle = '#fff';
+    cx.fillRect(0, 0, cv.width, cv.height);
+    await pg.render({ canvasContext: cx, viewport: vp }).promise;
+
+    for (const o of rc[p]) {
+      const x = Math.max(0, o.x0 * S);
+      const y = Math.max(0, o.t * S);
+      const w = Math.min(cv.width - x, (o.x1 - o.x0) * S);
+      const h = Math.min(cv.height - y, (o.b - o.t) * S);
+      if (w < 20 || h < 20) continue;
+      const k = Math.min(1, 960 / w);
+      const c2 = document.createElement('canvas');
+      c2.width = w * k; c2.height = h * k;
+      c2.getContext('2d').drawImage(cv, x, y, w, h, 0, 0, c2.width, c2.height);
+      o.q.img.push(c2.toDataURL('image/jpeg', 0.85));
+    }
+  }
+}
+
+/* 4. Interactive Review & Editor */
+let B = null;
+let activeUploadQIndex = null;
+
+function fin() {
+  if (!B || !B.Q) return;
+  const man = keyMap($('#kt').value);
+  B.Q.forEach(q => {
+    let v = q.fix ?? man[q.no] ?? B.sk[q.no] ?? q.inl ?? B.pk[q.no];
+    if (v >= q.o.length) v = undefined;
+    q.ans = v === undefined ? -1 : v;
+  });
+}
+
+function validate(Q, key, rawL) {
+  const issues = [];
+  const warnings = [];
+
+  if (!Q || Q.length === 0) {
+    issues.push({ type: 'empty', msg: 'No questions detected in the document.' });
+    return { isValid: false, issues, warnings, stats: { total: 0, answered: 0, unanswered: 0, withImages: 0, missingFigures: 0, imgPayloadMB: 0, imgCount: 0 } };
+  }
+
+  // 1. Numbering validation
+  const seenNos = new Map();
+  let maxNo = 0, minNo = Infinity, hasDuplicates = false;
+
+  Q.forEach((q, idx) => {
+    if (q.no < minNo) minNo = q.no;
+    if (q.no > maxNo) maxNo = q.no;
+    if (seenNos.has(q.no)) {
+      seenNos.get(q.no).push(idx + 1);
+      hasDuplicates = true;
+    } else {
+      seenNos.set(q.no, [idx + 1]);
+    }
+  });
+
+  if (hasDuplicates) {
+    seenNos.forEach((indices, no) => {
+      if (indices.length > 1) {
+        warnings.push({
+          type: 'duplicate_no',
+          qNo: no,
+          msg: `Duplicate question #${no} found at indices ${indices.join(', ')}.`
+        });
+      }
+    });
+  }
+
+  if (minNo === 1 && !hasDuplicates && maxNo > Q.length) {
+    const missing = [];
+    for (let n = 1; n <= maxNo; n++) {
+      if (!seenNos.has(n)) missing.push(n);
+    }
+    if (missing.length > 0) {
+      warnings.push({
+        type: 'missing_no',
+        msg: `Question numbering has ${missing.length} missing question(s): ${missing.slice(0, 8).join(', ')}${missing.length > 8 ? '...' : ''}.`
+      });
+    }
+  }
+
+  // 2. Options validation
+  Q.forEach((q, idx) => {
+    if (!q.o || q.o.length < 2) {
+      issues.push({
+        type: 'few_opts',
+        qIndex: idx,
+        qNo: q.no,
+        msg: `Question #${q.no} has only ${q.o ? q.o.length : 0} option(s). At least 2 options are required.`
+      });
+    }
+    const blankIdxs = (q.o || []).map((opt, oi) => !opt || !opt.trim() ? oi : -1).filter(oi => oi >= 0);
+    if (blankIdxs.length > 0) {
+      warnings.push({
+        type: 'blank_opt',
+        qIndex: idx,
+        qNo: q.no,
+        msg: `Question #${q.no} has blank option(s): ${blankIdxs.map(i => 'ABCDE'[i] || (i + 1)).join(', ')}.`
+      });
+    }
+  });
+
+  // 3. Stems validation
+  Q.forEach((q, idx) => {
+    if (!q.stem || !q.stem.trim()) {
+      issues.push({
+        type: 'empty_stem',
+        qIndex: idx,
+        qNo: q.no,
+        msg: `Question #${q.no} has an empty stem.`
+      });
+    } else if (q.stem.trim().length < 5) {
+      warnings.push({
+        type: 'short_stem',
+        qIndex: idx,
+        qNo: q.no,
+        msg: `Question #${q.no} stem is very short (${q.stem.trim().length} chars).`
+      });
+    } else if (q.stem.length > 900) {
+      warnings.push({
+        type: 'long_stem',
+        qIndex: idx,
+        qNo: q.no,
+        msg: `Question #${q.no} stem is unusually long (${q.stem.length} chars). Verify options did not merge.`
+      });
+    }
+  });
+
+  // 4. Figure cross-check
+  const figureRegex = /\b(?:figure|diagram|image|graph|illustration|photograph|picture|marked\s+structure|shown\s+below)\b/i;
+  let missingFigures = 0;
+  Q.forEach((q, idx) => {
+    const mentionsFigure = figureRegex.test(q.stem || '') || (q.o || []).some(o => figureRegex.test(o));
+    const hasImg = q.img && q.img.length > 0;
+    if (mentionsFigure && !hasImg) {
+      missingFigures++;
+      warnings.push({
+        type: 'missing_figure',
+        qIndex: idx,
+        qNo: q.no,
+        msg: `Question #${q.no} text references a figure/diagram, but no image is attached.`
+      });
+    }
+  });
+
+  // 5. Answer key coverage
+  let unanswered = 0;
+  Q.forEach((q, idx) => {
+    if (q.ans === undefined || q.ans < 0) {
+      unanswered++;
+    } else if (q.ans >= (q.o ? q.o.length : 0)) {
+      issues.push({
+        type: 'ans_out_of_range',
+        qIndex: idx,
+        qNo: q.no,
+        msg: `Question #${q.no} answer index (${'ABCDE'[q.ans] || q.ans}) exceeds option count (${q.o.length}).`
+      });
+    }
+  });
+  if (unanswered > 0) {
+    warnings.push({
+      type: 'unanswered',
+      msg: `${unanswered} question(s) have no answer key set. They will not be graded.`
+    });
+  }
+
+  // 6. Payload size
+  let totalImgBytes = 0, imgCount = 0;
+  Q.forEach(q => {
+    if (q.img) {
+      q.img.forEach(dataUri => {
+        imgCount++;
+        totalImgBytes += dataUri.length;
+      });
+    }
+  });
+  const mb = +(totalImgBytes / (1024 * 1024)).toFixed(1);
+  if (totalImgBytes > 12 * 1024 * 1024) {
+    warnings.push({
+      type: 'payload_size',
+      msg: `Total embedded image size is ${mb} MB (${imgCount} images). File may load slower on mobile.`
+    });
+  }
+
+  return {
+    isValid: issues.length === 0,
+    issues,
+    warnings,
+    stats: {
+      total: Q.length,
+      answered: Q.length - unanswered,
+      unanswered,
+      withImages: Q.filter(q => q.img && q.img.length > 0).length,
+      missingFigures,
+      imgPayloadMB: mb,
+      imgCount
+    }
+  };
+}
+
+let currentTab = 'test';
+
+function saveSession() {
+  if (!B || !B.Q || !B.Q.length) return;
+  if (typeof sessionStorage === 'undefined' && typeof localStorage === 'undefined') return;
+  try {
+    const sessionData = {
+      title: typeof $ === 'function' && $('#ti') ? $('#ti').value : 'Mock test',
+      min: typeof $ === 'function' && $('#mi') ? +$('#mi').value : 180,
+      lm: typeof $ === 'function' && $('#lm') ? $('#lm').value : 'auto',
+      sm: typeof $ === 'function' && $('#sm') ? $('#sm').value : 'a',
+      em: typeof $ === 'function' && $('#em') ? $('#em').value : 'auto',
+      Q: B.Q.map(q => ({
+        no: q.no,
+        sub: q.sub,
+        stem: q.stem,
+        o: q.o,
+        ans: q.ans,
+        fix: q.fix,
+        inl: q.inl,
+        img: (q.img || []).filter(u => typeof u === 'string' && u.length < 500000),
+        exp: q.exp || ''
+      })),
+      pk: B.pk || {},
+      sk: B.sk || {}
+    };
+    const raw = JSON.stringify(sessionData);
+    if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('excam_current_session', raw);
+    if (typeof localStorage !== 'undefined') {
+      try { localStorage.setItem('excam_current_session', raw); } catch(e) {}
+    }
+  } catch (e) {
+    console.warn('Session save failed (quota exceeded):', e);
+  }
+}
+
+function tryRestoreSession() {
+  try {
+    if (typeof sessionStorage === 'undefined' && typeof localStorage === 'undefined') return;
+    const raw = (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('excam_current_session') : null) ||
+                (typeof localStorage !== 'undefined' ? localStorage.getItem('excam_current_session') : null);
+    if (!raw) return;
+    const s = JSON.parse(raw);
+    if (!s || !s.Q || !s.Q.length) return;
+    if (typeof $ !== 'function') return;
+    if ($('#ti')) $('#ti').value = s.title || 'Mock test';
+    if ($('#mi')) $('#mi').value = s.min || 180;
+    if ($('#lm')) $('#lm').value = s.lm || 'auto';
+    if ($('#sm')) $('#sm').value = s.sm || 'a';
+    if ($('#em')) $('#em').value = s.em || 'auto';
+    B = {
+      r: null,
+      Q: s.Q,
+      pk: s.pk || {},
+      sk: s.sk || {}
+    };
+    say('Restored previous test session (' + s.Q.length + ' questions).');
+    show('test');
+  } catch (e) {
+    console.warn('Session restore failed:', e);
+  }
+}
+
+function setTab(tab, forceReload = false) {
+  currentTab = tab;
+  $$('.tab-btn').forEach(b => {
+    const isCur = b.dataset.tab === tab;
+    b.classList.toggle('active', isCur);
+    b.style.borderBottom = isCur ? '3px solid var(--a)' : 'none';
+    b.style.color = isCur ? 'var(--a)' : 'var(--m)';
+  });
+  $$('.tab-panel').forEach(p => {
+    p.hidden = p.id !== 'panel-' + tab;
+  });
+  if (tab === 'test') {
+    const frame = $('#main-test-frame');
+    if (frame && (forceReload || !frame.srcdoc || frame.srcdoc === 'about:blank')) {
+      frame.srcdoc = EX(data());
+    }
+  }
+}
+
+function show(activeTab = 'test') {
+  fin();
+  const Q = B.Q;
+  const no = Q.filter(q => q.ans < 0).length;
+  const im = Q.filter(q => q.img && q.img.length).length;
+  const audit = validate(Q, B.pk, B.r ? B.r.L : []);
+  const testTitle = $('#ti').value || 'Mock test';
+  currentTab = activeTab;
+  saveSession();
+
+  $('#out').innerHTML = `
+    <div class="card" style="margin-bottom:12px;padding:16px 20px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+        <div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
+            <span style="background:var(--s);color:var(--a);padding:3px 10px;border-radius:99px;font-size:.82rem;font-weight:700">Ready to Take</span>
+            <h2 style="margin:0;font-size:1.35rem">${E(testTitle)}</h2>
+          </div>
+          <div class="mu" style="display:flex;gap:12px;flex-wrap:wrap;font-size:.88rem">
+            <span><b>${Q.length}</b> questions</span>
+            <span>·</span>
+            <span><b>${Q.length - no}</b> answered</span>
+            <span>·</span>
+            <span><b>${im}</b> with figures</span>
+            <span>·</span>
+            <span><b>${+$('#mi').value || 180}</b> mins</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button type="button" class="p" id="run-now-btn" style="font-size:1.02rem;padding:9px 18px">▶ Run Test Now</button>
+          <button type="button" class="btn" id="reset-test-btn" style="font-size:1.02rem;padding:9px 14px" title="Reset answers & restart from Question 1">🔄 Start Fresh</button>
+          <button type="button" class="btn" id="dl" style="font-size:1.02rem;padding:9px 16px">⬇ Download test.html</button>
+          <button type="button" class="btn" id="clear-session-btn" style="font-size:1.02rem;padding:9px 12px;color:var(--r)" title="Clear paper and start with new file">✕ Clear</button>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:12px;margin:18px 0 0;border-bottom:2px solid var(--l);padding-bottom:2px;overflow-x:auto">
+        <button type="button" class="tab-btn ${activeTab === 'test' ? 'active' : ''}" data-tab="test" style="border:none;background:none;font-weight:700;font-size:1rem;color:${activeTab === 'test' ? 'var(--a)' : 'var(--m)'};cursor:pointer;padding:8px 14px;border-bottom:${activeTab === 'test' ? '3px solid var(--a)' : 'none'};margin-bottom:-2px">▶ Interactive Test Player</button>
+        <button type="button" class="tab-btn ${activeTab === 'editor' ? 'active' : ''}" data-tab="editor" style="border:none;background:none;font-weight:700;font-size:1rem;color:${activeTab === 'editor' ? 'var(--a)' : 'var(--m)'};cursor:pointer;padding:8px 14px;border-bottom:${activeTab === 'editor' ? '3px solid var(--a)' : 'none'};margin-bottom:-2px">📋 Questions Editor (${Q.length})</button>
+        <button type="button" class="tab-btn ${activeTab === 'audit' ? 'active' : ''}" data-tab="audit" style="border:none;background:none;font-weight:700;font-size:1rem;color:${activeTab === 'audit' ? 'var(--a)' : 'var(--m)'};cursor:pointer;padding:8px 14px;border-bottom:${activeTab === 'audit' ? '3px solid var(--a)' : 'none'};margin-bottom:-2px">🔍 Quality Audit (${audit.issues.length ? '⚠️ ' + audit.issues.length + ' issues' : '✔ Healthy'})</button>
+      </div>
+    </div>
+
+    <!-- Panel 1: Interactive Test Player -->
+    <div id="panel-test" class="tab-panel" ${activeTab !== 'test' ? 'hidden' : ''}>
+      <div class="card" style="padding:10px 14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <div style="font-size:.9rem;color:var(--m)">
+          <b>Live Simulation Running:</b> Full exam conditions with countdown timer, keyboard shortcuts (A-E, 1-5, N, P, M, C), mark for review, and instant subject breakdown.
+        </div>
+        <button type="button" class="btn" id="open-fullscreen-btn" style="padding:5px 12px;font-size:.85rem">⛶ Fullscreen Preview</button>
+      </div>
+      <iframe id="main-test-frame" style="width:100%;height:85vh;border:1.5px solid var(--l);border-radius:10px;background:var(--c);" title="Test Player"></iframe>
+    </div>
+
+    <!-- Panel 2: Questions Editor -->
+    <div id="panel-editor" class="tab-panel" ${activeTab !== 'editor' ? 'hidden' : ''}>
+      <div class="card" style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <div>
+          <b style="font-size:1.05rem">Review & Edit Questions</b>
+          <p class="mu" style="margin:2px 0 0">Modify stems, options, correct answers, or crop/upload figures. Changes update live in the test.</p>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" class="btn" id="ap">Apply pasted key</button>
+          <button type="button" class="btn" id="add-q">+ Add new question</button>
+        </div>
+      </div>
+
+      <div id="questions-list">
+        ${Q.map((q, i) => `
+          <div class="qc ${q.ans < 0 ? 'no-ans' : 'has-ans'}" data-qi="${i}" id="qc-${i}">
+            <div class="qh">
+              <b>Q.<input type="number" class="q-no" data-qi="${i}" value="${q.no}" style="width:75px;display:inline-block;padding:4px 8px"></b>
+              <input type="text" class="q-sub" data-qi="${i}" value="${E(q.sub)}" placeholder="Subject / Section" style="width:180px;padding:4px 8px">
+              <span style="flex:1"></span>
+              <label style="margin:0;display:flex;align-items:center;gap:6px">Answer:
+                <select class="q-ans-sel" data-qi="${i}" style="width:auto;padding:4px 10px">
+                  <option value="">— None —</option>
+                  ${q.o.map((_, k) => `<option value="${k}" ${q.ans === k ? 'selected' : ''}>${'ABCDE'[k] || (k + 1)}</option>`).join('')}
+                </select>
+              </label>
+              <button type="button" class="btn del-q" data-qi="${i}" style="color:var(--r);padding:4px 10px" title="Delete question">🗑️</button>
+            </div>
+
+            <textarea class="q-stem" data-qi="${i}" rows="3" placeholder="Question text...">${E(q.stem)}</textarea>
+
+            <div class="opts-list">
+              ${q.o.map((optText, k) => `
+                <div class="opt-row">
+                  <b>${'ABCDE'[k] || (k + 1)}</b>
+                  <input class="q-opt-val" data-qi="${i}" data-oi="${k}" value="${E(optText)}">
+                  <button type="button" class="del-opt" data-qi="${i}" data-oi="${k}" title="Remove option">×</button>
+                </div>
+              `).join('')}
+            </div>
+            <button type="button" class="btn add-opt-btn" data-qi="${i}" style="padding:4px 10px;font-size:.85rem">+ Add option</button>
+
+            ${q.exp ? `
+              <div style="margin-top:10px">
+                <label style="margin:0 0 4px;font-size:.85rem;color:var(--m)">Explanation / Reference</label>
+                <textarea class="q-exp" data-qi="${i}" rows="2" style="font-size:.9rem">${E(q.exp)}</textarea>
+              </div>
+            ` : ''}
+
+            <div class="imgs-bar">
+              ${q.img.map((u, j) => `
+                <span style="display:inline-flex;align-items:center;background:var(--b);border-radius:6px;padding:2px 4px">
+                  <img class="th" src="${u}" alt="Figure">
+                  <button type="button" class="x" data-qi="${i}" data-img-idx="${j}" title="Remove image">×</button>
+                </span>
+              `).join('')}
+              <button type="button" class="btn crop-btn" data-qi="${i}" style="padding:4px 10px;font-size:.85rem">✂ Crop from PDF</button>
+              <button type="button" class="btn upload-img-btn" data-qi="${i}" style="padding:4px 10px;font-size:.85rem">📷 Upload image</button>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+
+    <!-- Panel 3: Quality Audit & Integrity Report -->
+    <div id="panel-audit" class="tab-panel" ${activeTab !== 'audit' ? 'hidden' : ''}>
+      <div class="card">
+        <h3 style="margin-top:0">Quality & Integrity Audit</h3>
+        <p class="mu">Automated audit of numbering continuity, option counts, answer key coverage, and figure cross-checks.</p>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:16px 0">
+          <div style="background:var(--b);padding:12px;border-radius:8px;border:1px solid var(--l)">
+            <div style="font-size:1.8rem;font-weight:700;color:var(--a)">${audit.stats.total}</div>
+            <div class="mu">Total Questions</div>
+          </div>
+          <div style="background:var(--b);padding:12px;border-radius:8px;border:1px solid var(--l)">
+            <div style="font-size:1.8rem;font-weight:700;color:var(--g)">${audit.stats.answered}</div>
+            <div class="mu">Answered (${Math.round(100 * audit.stats.answered / (audit.stats.total || 1))}%)</div>
+          </div>
+          <div style="background:var(--b);padding:12px;border-radius:8px;border:1px solid var(--l)">
+            <div style="font-size:1.8rem;font-weight:700;color:${audit.stats.unanswered ? 'var(--r)' : 'var(--g)'}">${audit.stats.unanswered}</div>
+            <div class="mu">Unanswered</div>
+          </div>
+          <div style="background:var(--b);padding:12px;border-radius:8px;border:1px solid var(--l)">
+            <div style="font-size:1.8rem;font-weight:700;color:var(--v)">${audit.stats.withImages}</div>
+            <div class="mu">Questions with Figures</div>
+          </div>
+          <div style="background:var(--b);padding:12px;border-radius:8px;border:1px solid var(--l)">
+            <div style="font-size:1.8rem;font-weight:700">${audit.stats.imgPayloadMB} MB</div>
+            <div class="mu">Image Payload (${audit.stats.imgCount} crops)</div>
+          </div>
+        </div>
+
+        ${audit.issues.length ? `
+          <h4 style="color:var(--r);margin:16px 0 8px">Critical Issues (${audit.issues.length})</h4>
+          <ul style="color:var(--r);margin:0;padding-left:20px;display:grid;gap:6px">
+            ${audit.issues.map(iss => `
+              <li>
+                ${E(iss.msg)}
+                ${iss.qIndex !== undefined ? `<button type="button" class="btn jump-btn" data-qi="${iss.qIndex}" style="padding:2px 8px;font-size:.78rem;margin-left:6px">Inspect Q#${iss.qNo}</button>` : ''}
+              </li>
+            `).join('')}
+          </ul>
+        ` : '<p style="color:var(--g);font-weight:700">✔ Zero critical issues detected.</p>'}
+
+        ${audit.warnings.length ? `
+          <h4 style="color:var(--m);margin:16px 0 8px">Warnings & Findings (${audit.warnings.length})</h4>
+          <ul style="color:var(--i);margin:0;padding-left:20px;display:grid;gap:6px">
+            ${audit.warnings.map(w => `
+              <li>
+                ${E(w.msg)}
+                ${w.qIndex !== undefined ? `<button type="button" class="btn jump-btn" data-qi="${w.qIndex}" style="padding:2px 8px;font-size:.78rem;margin-left:6px">Inspect Q#${w.qNo}</button>` : ''}
+              </li>
+            `).join('')}
+          </ul>
+        ` : '<p style="color:var(--g);font-weight:700">✔ Zero warnings.</p>'}
+      </div>
+    </div>
+  `;
+
+  if (activeTab === 'test') {
+    const frame = $('#main-test-frame');
+    if (frame && (!frame.srcdoc || frame.srcdoc === 'about:blank')) {
+      frame.srcdoc = EX(data());
+    }
+  }
+
+  const outEl = $('#out');
+  if (outEl && typeof outEl.scrollIntoView === 'function') {
+    outEl.scrollIntoView({ behavior: 'smooth' });
+  }
+}
+
+/* Event handling for UI inputs */
+$('#f').onchange = e => {
+  const f = e.target.files[0];
+  if (f) $('#ti').value = f.name.replace(/\.pdf$/i, '').replace(/[_-]+/g, ' ');
+};
+
+let isBuilding = false;
+$('#go').onclick = async () => {
+  if (isBuilding) return;
+  const f = $('#f').files[0];
+  if (!f) return say('Choose a PDF file first.');
+  isBuilding = true;
+  say('Reading document...');
+  try {
+    const r = await read(f, say, $('#lm').value, $('#em').value);
+    const P = parse(r.L);
+    if (!P.Q.length) {
+      isBuilding = false;
+      return say('No questions found. Try selecting "Force OCR" or adjusting layout columns.');
+    }
+    B = { r, Q: P.Q, pk: P.key, sk: {} };
+    const kf = $('#kf').files[0];
+    if (kf) {
+      say('Reading answer key PDF...');
+      const k = await read(kf, say, '1', 'auto');
+      B.sk = keyMap(k.L.map(l => l.t).join(' '));
+    }
+    await crop(r, B.Q, $('#sm').value === 's', say);
+    say('Ready.');
+    // Clear old test attempt from localStorage so new build starts fresh:
+    const d = data();
+    try { localStorage.removeItem('ex_' + d.id); } catch(e) {}
+    saveSession();
+    const autoRun = $('#auto-run') ? $('#auto-run').checked : true;
+    show(autoRun ? 'test' : 'editor');
+  } catch (err) {
+    say('Error processing PDF: ' + err.message);
+    console.error(err);
+  } finally {
+    isBuilding = false;
+  }
+};
+
+const hashId = (title, Q) => {
+  let s = (title || '') + '_' + (Q ? Q.length : 0);
+  if (Q && Q[0]) s += '_' + (Q[0].stem || '').slice(0, 30);
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h) + s.charCodeAt(i) | 0;
+  return 'ex_' + Math.abs(h).toString(36);
+};
+
+const data = () => {
+  fin();
+  return {
+    title: $('#ti').value || 'Mock test',
+    id: hashId($('#ti').value, B.Q),
+    min: +$('#mi').value || 180,
+    q: B.Q.map(q => ({
+      no: q.no,
+      sub: q.sub,
+      stem: q.stem,
+      o: q.o,
+      ans: q.ans,
+      img: q.img || [],
+      exp: q.exp || ''
+    }))
+  };
+};
+
+/* Event delegation for editable question elements */
+$('#out').oninput = e => {
+  const t = e.target;
+  const qi = t.dataset.qi;
+  if (qi === undefined) return;
+  const q = B.Q[+qi];
+  if (!q) return;
+
+  if (t.classList.contains('q-no')) {
+    q.no = +t.value || q.no;
+  } else if (t.classList.contains('q-sub')) {
+    q.sub = t.value;
+  } else if (t.classList.contains('q-stem')) {
+    q.stem = t.value;
+  } else if (t.classList.contains('q-exp')) {
+    q.exp = t.value;
+  } else if (t.classList.contains('q-opt-val')) {
+    const oi = +t.dataset.oi;
+    q.o[oi] = t.value;
+  }
+};
+
+$('#out').onchange = e => {
+  const t = e.target;
+  const qi = t.dataset.qi;
+  if (qi === undefined) return;
+  const q = B.Q[+qi];
+  if (!q) return;
+
+  if (t.classList.contains('q-ans-sel')) {
+    q.fix = t.value === '' ? undefined : +t.value;
+    fin();
+    const qc = t.closest('.qc');
+    if (qc) {
+      if (q.ans < 0) {
+        qc.classList.add('no-ans');
+        qc.classList.remove('has-ans');
+      } else {
+        qc.classList.remove('no-ans');
+        qc.classList.add('has-ans');
+      }
+    }
+  }
+};
+
+$('#out').onclick = e => {
+  const t = e.target;
+  const qi = t.dataset.qi !== undefined ? +t.dataset.qi : null;
+
+  if (t.id === 'run-now-btn') {
+    setTab('test', true);
+  } else if (t.id === 'reset-test-btn') {
+    const d = data();
+    try { localStorage.removeItem('ex_' + d.id); } catch(e) {}
+    setTab('test', true);
+  } else if (t.id === 'clear-session-btn') {
+    if (confirm('Clear current test session?')) {
+      sessionStorage.removeItem('excam_current_session');
+      try { localStorage.removeItem('excam_current_session'); } catch(e) {}
+      B = null;
+      $('#out').innerHTML = '';
+      say('Session cleared. Choose a PDF to start again.');
+    }
+  } else if (t.classList.contains('tab-btn')) {
+    setTab(t.dataset.tab);
+  } else if (t.classList.contains('jump-btn') && t.dataset.qi !== undefined) {
+    const jumpIdx = +t.dataset.qi;
+    setTab('editor');
+    const qc = document.getElementById('qc-' + jumpIdx);
+    if (qc) {
+      qc.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      qc.style.outline = '3px solid var(--a)';
+      setTimeout(() => { qc.style.outline = ''; }, 2000);
+    }
+  } else if (t.id === 'ap') {
+    show('editor');
+  } else if (t.id === 'add-q') {
+    const maxNo = B.Q.length ? Math.max(...B.Q.map(q => q.no)) : 0;
+    B.Q.push({
+      no: maxNo + 1,
+      p: 1,
+      y: 0,
+      col: 0,
+      ySeq: 0,
+      sub: '',
+      stem: 'New question',
+      o: ['Option A', 'Option B', 'Option C', 'Option D'],
+      ans: -1,
+      img: [],
+      exp: ''
+    });
+    show('editor');
+  } else if (t.classList.contains('del-q') && qi !== null) {
+    if (confirm('Delete question ' + B.Q[qi].no + '?')) {
+      B.Q.splice(qi, 1);
+      show('editor');
+    }
+  } else if (t.classList.contains('add-opt-btn') && qi !== null) {
+    B.Q[qi].o.push('');
+    show('editor');
+  } else if (t.classList.contains('del-opt') && qi !== null) {
+    const oi = +t.dataset.oi;
+    B.Q[qi].o.splice(oi, 1);
+    show('editor');
+  } else if (t.dataset.imgIdx !== undefined && qi !== null) {
+    const imgIdx = +t.dataset.imgIdx;
+    B.Q[qi].img.splice(imgIdx, 1);
+    show('editor');
+  } else if (t.classList.contains('crop-btn') && qi !== null) {
+    openCropper(qi);
+  } else if (t.classList.contains('upload-img-btn') && qi !== null) {
+    activeUploadQIndex = qi;
+    $('#img-upload-input').click();
+  } else if (t.id === 'pvb' || t.id === 'open-fullscreen-btn') {
+    fin();
+    $('#pv iframe').srcdoc = EX(data());
+    $('#pv').hidden = false;
+  } else if (t.id === 'dl') {
+    fin();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([EX(data())], { type: 'text/html' }));
+    a.download = ($('#ti').value || 'test').replace(/[^\w]+/g, '-') + '.html';
+    a.click();
+  }
+};
+
+$('#img-upload-input').onchange = e => {
+  const file = e.target.files[0];
+  if (!file || activeUploadQIndex === null) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    B.Q[activeUploadQIndex].img.push(ev.target.result);
+    show('editor');
+  };
+  reader.readAsDataURL(file);
+  e.target.value = '';
+};
+
+$('#cl').onclick = () => {
+  $('#pv').hidden = true;
+  $('#pv iframe').srcdoc = '';
+};
+
+/* 5. Visual Cropping Modal Implementation */
+let cropQIdx = null;
+let cropPage = 1;
+let cropPdf = null;
+let cropScale = 1.5;
+let cropStart = null;
+let cropBoxRect = null;
+let isDraggingCrop = false;
+
+function openCropper(qIdx) {
+  if (!B || !B.r || !B.r.pdf) return alert('PDF not loaded.');
+  cropQIdx = qIdx;
+  cropPdf = B.r.pdf;
+  cropPage = B.Q[qIdx].p || 1;
+  $('#crop-title').textContent = 'Crop Image for Question #' + B.Q[qIdx].no;
+  $('#crop-modal').hidden = false;
+  renderCropPage();
+}
+
+async function renderCropPage() {
+  $('#crop-page-num').textContent = cropPage;
+  $('#crop-total-pages').textContent = cropPdf.numPages;
+  $('#crop-box').hidden = true;
+  cropBoxRect = null;
+
+  const pg = await cropPdf.getPage(cropPage);
+  const vp = pg.getViewport({ scale: cropScale });
+  const cv = $('#crop-canvas');
+  cv.width = vp.width;
+  cv.height = vp.height;
+  const cx = cv.getContext('2d');
+  cx.fillStyle = '#fff';
+  cx.fillRect(0, 0, cv.width, cv.height);
+  await pg.render({ canvasContext: cx, viewport: vp }).promise;
+}
+
+$('#crop-prev').onclick = () => {
+  if (cropPage > 1) { cropPage--; renderCropPage(); }
+};
+$('#crop-next').onclick = () => {
+  if (cropPage < cropPdf.numPages) { cropPage++; renderCropPage(); }
+};
+$('#crop-cancel').onclick = () => {
+  $('#crop-modal').hidden = true;
+};
+
+const cropWrapper = $('#crop-wrapper');
+const cropBox = $('#crop-box');
+
+cropWrapper.onmousedown = e => {
+  const rect = cropWrapper.getBoundingClientRect();
+  cropStart = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  isDraggingCrop = true;
+  cropBox.style.left = cropStart.x + 'px';
+  cropBox.style.top = cropStart.y + 'px';
+  cropBox.style.width = '0px';
+  cropBox.style.height = '0px';
+  cropBox.hidden = false;
+};
+
+window.addEventListener('mousemove', e => {
+  if (!isDraggingCrop || !cropStart) return;
+  const rect = cropWrapper.getBoundingClientRect();
+  const curX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+  const curY = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
+
+  const x = Math.min(cropStart.x, curX);
+  const y = Math.min(cropStart.y, curY);
+  const w = Math.abs(curX - cropStart.x);
+  const h = Math.abs(curY - cropStart.y);
+
+  cropBox.style.left = x + 'px';
+  cropBox.style.top = y + 'px';
+  cropBox.style.width = w + 'px';
+  cropBox.style.height = h + 'px';
+  cropBoxRect = { x, y, w, h };
+});
+
+window.addEventListener('mouseup', () => {
+  isDraggingCrop = false;
+});
+
+$('#crop-save').onclick = () => {
+  if (!cropBoxRect || cropBoxRect.w < 15 || cropBoxRect.h < 15) {
+    return alert('Please click and drag to select an area to crop first.');
+  }
+  const cv = $('#crop-canvas');
+  const cropCanvas = document.createElement('canvas');
+  cropCanvas.width = cropBoxRect.w;
+  cropCanvas.height = cropBoxRect.h;
+  const cx = cropCanvas.getContext('2d');
+  cx.drawImage(cv, cropBoxRect.x, cropBoxRect.y, cropBoxRect.w, cropBoxRect.h, 0, 0, cropBoxRect.w, cropBoxRect.h);
+
+  const dataUrl = cropCanvas.toDataURL('image/jpeg', 0.85);
+  B.Q[cropQIdx].img.push(dataUrl);
+  $('#crop-modal').hidden = true;
+  show('editor');
+};
+
+/* 6. The Exported Test: Standalone, Self-Contained HTML */
+const EXCSS = VARS + `body{padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}header{position:sticky;top:0;z-index:3;background:var(--c);border-bottom:1px solid var(--l);display:flex;align-items:center;gap:12px;padding:10px 14px}header h1{font-size:1rem;margin:0;flex:1}#t{font-weight:700;font-variant-numeric:tabular-nums}#t.lo{color:var(--r)}.w{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:14px;max-width:1020px;margin:0 auto;padding:14px}@media(max-width:760px){.w{grid-template-columns:1fr}}.k{background:var(--c);border:1px solid var(--l);border-radius:10px;padding:16px;margin-bottom:12px}.mt{color:var(--m);font-size:.88rem}.st{font:1.15rem/1.6 Georgia,serif;margin:6px 0 12px;white-space:pre-wrap}img{display:block;max-width:100%;max-height:360px;margin:0 0 12px;background:#fff;border-radius:6px;border:1px solid var(--l);object-fit:contain}.os{display:grid;gap:8px}.o{display:flex;gap:12px;text-align:left;background:var(--c);border:1.5px solid var(--l);border-radius:8px;padding:10px;width:100%}.o b{min-width:1.6em;height:1.6em;border-radius:50%;border:1.5px solid var(--m);display:grid;place-items:center;font-size:.85rem}.o span{white-space:pre-wrap}.o.s{background:var(--s);border-color:var(--a)}.o.s b{background:var(--a);color:var(--t);border-color:var(--a)}.o.r{border-color:var(--g);background:color-mix(in srgb,var(--g) 15%,var(--c))}.o.w{border-color:var(--r);background:color-mix(in srgb,var(--r) 15%,var(--c))}.o:disabled{cursor:default;color:var(--i)}.ct{position:sticky;bottom:0;display:flex;flex-wrap:wrap;gap:8px;padding:10px 0;background:var(--b)}.sp{flex:1}.bt{border:1.5px solid var(--l);background:var(--c);border-radius:8px;padding:9px 14px;font-weight:600}.bt.p{background:var(--a);border-color:var(--a);color:var(--t)}.bt.on{border-color:var(--v);color:var(--v)}.pl{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin:10px 0}.pb{height:38px;border-radius:7px;border:1.5px solid var(--l);background:var(--c);padding:0;font-weight:600}.pb.v{border-color:var(--r);color:var(--r)}.pb.a{background:var(--g);border-color:var(--g);color:#fff}.pb.m{background:var(--v);border-color:var(--v);color:#fff}.pb.c{outline:3px solid var(--a);outline-offset:1px}.lg{font-size:.82rem;color:var(--m)}.big{font-size:2.4rem;font-weight:700}.rw{display:flex;flex-wrap:wrap;gap:8px 22px}.rw b{display:block;font-size:1.4rem}table{width:100%;border-collapse:collapse;margin:12px 0}td,th{text-align:left;padding:8px 6px;border-bottom:1px solid var(--l)}.ch{border:1.5px solid var(--l);background:var(--c);border-radius:99px;padding:5px 14px;margin:0 6px 6px 0;cursor:pointer}.ch.on{background:var(--a);border-color:var(--a);color:var(--t)}label{display:grid;gap:4px;margin:10px 0;font-weight:700}input{font:inherit;padding:8px;border:1.5px solid var(--l);border-radius:8px;background:var(--b);color:var(--i);max-width:140px}@media print{header,.ct,aside,.ch,.pl{display:none!important}.bt:not(.prt-show){display:none!important}.w{grid-template-columns:1fr!important;padding:0!important;max-width:100%!important}.k{border:1px solid #ccc!important;box-shadow:none!important;break-inside:avoid}body{background:#fff!important;color:#000!important}}`;
+
+const EXJS = String.raw`const Q=D.q,K='ex_'+D.id,L='ABCDE',$=s=>document.querySelector(s);
+let S;try{S=JSON.parse(localStorage.getItem(K))}catch(x){}
+S=S||{ph:0,i:0,a:{},m:{},v:{},end:0,f:'all',c:{min:D.min,p:1,n:0.33},cn:'',cr:''};
+S.c=S.c||{min:D.min,p:1,n:0.33};
+if(S.ph==1&&S.end&&Date.now()>=S.end){S.ph=2;S.expired=1;try{localStorage.setItem(K,JSON.stringify(S))}catch(e){}}
+const sv=()=>{try{localStorage.setItem(K,JSON.stringify(S))}catch(x){}};
+const E=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fm=n=>Math.floor(n/3600)+':'+String(Math.floor(n%3600/60)).padStart(2,'0')+':'+String(n%60).padStart(2,'0');
+const lf=()=>Math.max(0,Math.ceil((S.end-Date.now())/1000));
+
+function qh(q,rev,sel){
+  return '<div class="mt">Question '+q.no+(q.sub?' · '+E(q.sub):'')+'</div>'+
+  '<p class="st">'+E(q.stem)+'</p>'+
+  (q.img||[]).map(u=>'<img src="'+u+'" alt="Figure">').join('')+
+  '<div class="os">'+q.o.map((t,k)=>'<button class="o'+(rev?(k==q.ans?' r':k==sel?' w':''):(k===sel?' s':''))+'" data-k="'+k+'"'+(rev?' disabled':'')+'><b>'+(L[k]||(k+1))+'</b><span>'+E(t)+'</span></button>').join('')+'</div>'+
+  (rev&&q.exp?'<div class="lg" style="margin-top:12px;padding:10px;background:var(--b);border-radius:6px;white-space:pre-wrap"><b>Explanation / Reference:</b>\n'+E(q.exp)+'</div>':'');
+}
+
+function res(){
+  let c=0,w=0,s=0,g=0,by={};
+  Q.forEach((q,i)=>{
+    if(q.ans<0)return;
+    g++;
+    const a=S.a[i],k=q.sub||'General',b=by[k]=by[k]||{n:0,c:0,w:0};
+    b.n++;
+    if(a===undefined)s++;
+    else if(a===q.ans){c++;b.c++}
+    else{w++;b.w++}
+  });
+  return{c,w,s,g,by,sc:+(c*S.c.p-w*S.c.n).toFixed(2)};
+}
+
+function draw(){
+  const A=$('#a');
+  if(!S.ph){
+    const ng=Q.filter(q=>q.ans<0).length;
+    const na=Object.keys(S.a||{}).length;
+    let resumeBlock='';
+    if(na>0||Object.keys(S.v||{}).length>0){
+      resumeBlock='<div class="k" style="border:1.5px solid var(--a);background:var(--s);padding:14px;margin-bottom:14px"><b>📝 Previous Attempt In Progress</b><p style="margin:4px 0 10px;font-size:.9rem">'+na+' of '+Q.length+' questions answered'+(S.cn?' for <b>'+E(S.cn)+'</b>':'')+'.</p><div style="display:flex;gap:10px;flex-wrap:wrap"><button class="bt p" data-a="resum">▶ Resume Attempt</button><button class="bt" data-a="re">🔄 Start Fresh (New Candidate)</button></div></div>';
+    }
+    A.innerHTML='<div class="w" style="grid-template-columns:1fr">'+resumeBlock+'<div class="k"><h2>'+E(D.title)+'</h2><p>'+Q.length+' questions.'+(ng?' '+ng+' have no answer key and will not be graded.':'')+' Progress saves automatically in this browser.</p><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:14px 0"><label>Candidate Name<input id="cn" type="text" value="'+E(S.cn||'')+'" placeholder="e.g. Dr. Alex Morgan" style="max-width:none"></label><label>Roll / ID No.<input id="cr" type="text" value="'+E(S.cr||'')+'" placeholder="e.g. 2026-INI-042" style="max-width:none"></label></div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin:14px 0"><label>Minutes<input id="m" type="number" value="'+(S.c.min||D.min)+'"></label><label>Marks per correct<input id="p" type="number" step="any" value="'+S.c.p+'"></label><label>Marks lost per wrong<input id="n" type="number" step="any" value="'+S.c.n+'"></label></div><button class="bt p" data-a="go" style="font-size:1.05rem;padding:11px 22px">🚀 Start Test</button></div></div>';
+    return;
+  }
+  if(S.ph==2){
+    const r=res();
+    const acc=(r.c+r.w?Math.round(100*r.c/(r.c+r.w)):0);
+    const candHeader=(S.cn?'<div style="margin-bottom:8px;font-size:1.1rem">Candidate: <b>'+E(S.cn)+'</b>'+(S.cr?' <span class="mu">('+E(S.cr)+')</span>':'')+'</div>':'');
+    const expNotice=(S.expired?'<div class="k" style="background:var(--s);border-color:var(--a);margin-bottom:12px;font-weight:700">⏰ Time expired. Your exam was automatically submitted.</div>':'');
+    A.innerHTML='<div class="w" style="grid-template-columns:1fr">'+expNotice+'<div class="k"><h2>Exam Scorecard</h2>'+candHeader+'<div class="big">'+r.sc+' <span class="lg">out of '+(r.g*S.c.p)+'</span></div><div class="rw" style="margin:12px 0 16px"><div><b>'+r.c+'</b>correct</div><div><b>'+r.w+'</b>wrong</div><div><b>'+r.s+'</b>skipped</div><div><b>'+acc+'%</b>accuracy</div>'+(S.subTime?'<div><b>'+E(S.subTime)+'</b>submitted</div>':'')+'</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0"><button class="bt p" data-a="re">🔄 Retake / New Candidate</button><button class="bt" data-a="print">🖨️ Print / Save Scorecard</button><button class="bt" data-a="copy">📋 Copy Summary</button></div><table><tr><th>Subject</th><th>Questions</th><th>Correct</th><th>Wrong</th></tr>'+Object.entries(r.by).map(([k,b])=>'<tr><td>'+E(k)+'</td><td>'+b.n+'</td><td>'+b.c+'</td><td>'+b.w+'</td></tr>').join('')+'</table><p style="margin-top:16px">'+[['all','All'],['wrong','Wrong'],['skip','Skipped'],['right','Correct']].map(([k,l])=>'<button class="ch'+(S.f==k?' on':'')+'" data-f="'+k+'">'+l+'</button>').join('')+'</p></div>'+
+    Q.map((q,i)=>({q,i})).filter(({q,i})=>{
+      const a=S.a[i],g=q.ans>=0;
+      return S.f=='all'||(g&&S.f=='right'&&a===q.ans)||(g&&S.f=='wrong'&&a!==undefined&&a!==q.ans)||(S.f=='skip'&&a===undefined);
+    }).map(({q,i})=>'<div class="k">'+qh(q,1,S.a[i])+'<p class="lg" style="margin-top:10px">'+(S.a[i]===undefined?'Skipped. ':'You chose '+(L[S.a[i]]||(S.a[i]+1))+'. ')+(q.ans>=0?'Correct answer: '+(L[q.ans]||(q.ans+1))+'.':'No answer key provided for this question.')+'</p></div>').join('')+'</div>';
+    return;
+  }
+
+  const q=Q[S.i],na=Object.keys(S.a).length;
+  S.v[S.i]=1;
+  A.innerHTML='<header><h1>'+E(D.title)+'</h1>'+(S.cn?'<span class="mt" style="font-weight:600;font-size:.9rem">'+E(S.cn)+'</span>':'')+'<span id="t">'+fm(lf())+'</span></header><div class="w"><main><div class="k">'+qh(q,0,S.a[S.i])+'</div><div class="ct">'+(S.cf?'<div class="k" style="width:100%">Are you sure you want to submit? '+(Q.length-na)+' questions unanswered.<br><button class="bt p" data-a="sub" style="margin-top:8px">Yes, submit test</button> <button class="bt" data-a="no">Continue test</button></div>':'')+'<button class="bt" data-a="pr">Previous</button><button class="bt'+(S.m[S.i]?' on':'')+'" data-a="mk">'+(S.m[S.i]?'Unmark':'Mark for review')+'</button><button class="bt" data-a="cl">Clear</button><span class="sp"></span><button class="bt p" data-a="nx">Next</button><button class="bt" data-a="ask">Submit</button></div></main><aside class="k"><b>'+na+' of '+Q.length+' answered</b><div class="pl">'+Q.map((x,i)=>'<button class="pb '+(S.m[i]?'m':S.a[i]!==undefined?'a':S.v[i]?'v':'')+(i==S.i?' c':'')+'" data-i="'+i+'">'+x.no+'</button>').join('')+'</div><div class="lg">Green: answered | Purple: marked for review | Red outline: seen | Border: current</div></aside></div>';
+}
+
+const go=i=>{S.i=Math.max(0,Math.min(Q.length-1,i));S.cf=0;sv();draw();scrollTo(0,0)};
+const fin=()=>{S.ph=2;S.f='all';S.cf=0;S.subTime=new Date().toLocaleString();sv();draw();scrollTo(0,0)};
+
+document.onclick=ev=>{
+  const t=ev.target.closest('[data-k],[data-i],[data-a],[data-f]');
+  if(!t)return;
+  const d=t.dataset;
+  if(S.ph==1&&d.k!==undefined){S.a[S.i]=+d.k;sv();draw();return}
+  if(d.f){S.f=d.f;sv();draw();return}
+  if(d.i!==undefined){go(+d.i);return}
+  const a=d.a;
+  if(a=='go'){
+    const cnEl=$('#cn'), crEl=$('#cr');
+    if(cnEl) S.cn=cnEl.value.trim();
+    if(crEl) S.cr=crEl.value.trim();
+    S.c.min=+$('#m').value||D.min;
+    S.c.p=+$('#p').value||1;
+    S.c.n=+$('#n').value||0;
+    S.ph=1;
+    S.end=Date.now()+S.c.min*6e4;
+    S.subTime=null;
+    S.expired=0;
+    go(0);
+  } else if(a=='resum'){
+    S.ph=1;
+    go(S.i||0);
+  } else if(a=='nx')go(S.i+1);
+  else if(a=='pr')go(S.i-1);
+  else if(a=='mk'){S.m[S.i]=!S.m[S.i];sv();draw();}
+  else if(a=='cl'){delete S.a[S.i];sv();draw();}
+  else if(a=='ask'){S.cf=1;draw();}
+  else if(a=='no'){S.cf=0;draw();}
+  else if(a=='sub')fin();
+  else if(a=='re'){
+    S={ph:0,i:0,a:{},m:{},v:{},end:0,f:'all',c:S.c,cn:'',cr:''};
+    sv();draw();
+  } else if(a=='print'){
+    window.print();
+  } else if(a=='copy'){
+    const r=res();
+    const txt='Exam Scorecard: '+D.title+'\nCandidate: '+(S.cn||'Candidate')+(S.cr?' ('+S.cr+')':'')+'\nScore: '+r.sc+' / '+(r.g*S.c.p)+'\nAccuracy: '+(r.c+r.w?Math.round(100*r.c/(r.c+r.w)):0)+'%\nCorrect: '+r.c+', Wrong: '+r.w+', Skipped: '+r.s;
+    navigator.clipboard.writeText(txt).then(()=>alert('Scorecard summary copied to clipboard!'));
+  }
+};
+
+window.onkeydown=e=>{
+  if(S.ph!=1||e.target.tagName=='INPUT'||e.target.tagName=='TEXTAREA')return;
+  const k=e.key.toUpperCase();
+  if(['A','B','C','D','E'].includes(k)){
+    const optIdx=k.charCodeAt(0)-65;
+    if(Q[S.i].o[optIdx]!==undefined){S.a[S.i]=optIdx;sv();draw();}
+  } else if(['1','2','3','4','5'].includes(k)){
+    const optIdx=+k-1;
+    if(Q[S.i].o[optIdx]!==undefined){S.a[S.i]=optIdx;sv();draw();}
+  } else if(e.key=='ArrowRight'||k=='N'){
+    go(S.i+1);
+  } else if(e.key=='ArrowLeft'||k=='P'){
+    go(S.i-1);
+  } else if(k=='M'){
+    S.m[S.i]=!S.m[S.i];sv();draw();
+  } else if(k=='C'){
+    delete S.a[S.i];sv();draw();
+  }
+};
+
+setInterval(()=>{
+  if(S.ph!=1)return;
+  const l=lf();
+  if(!l){S.expired=1;fin();return}
+  const t=$('#t');
+  if(t){t.textContent=fm(l);t.className=l<300?'lo':''}
+},1000);
+
+draw();`;
+
+const EX = D => '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>' + E(D.title) + '</title><style>' + EXCSS + '</style></head><body><div id="a"></div>\x3cscript>const D=' + JSON.stringify(D).replace(/</g, '\\u003c') + ';' + EXJS + '\x3c/script>\x3c/body>\x3c/html>';
+
+async function loadDemoExam() {
+  say('Loading demo exam...');
+  try {
+    let demo = null;
+    try {
+      const resp = await fetch('demo_test.json');
+      if (resp.ok) demo = await resp.json();
+    } catch(e) {}
+    if (!demo) throw new Error('Could not load demo_test.json');
+    $('#ti').value = demo.title;
+    $('#mi').value = demo.min || 180;
+    B = {
+      r: null,
+      Q: demo.q.map(q => ({
+        ...q,
+        fix: undefined,
+        img: q.img || []
+      })),
+      pk: {},
+      sk: {}
+    };
+    fin();
+    try { localStorage.removeItem('ex_' + hashId(demo.title, B.Q)); } catch(e) {}
+    saveSession();
+    say('Ready: Loaded ' + B.Q.length + ' questions from ' + demo.title);
+    show('test');
+    const frame = $('#main-test-frame');
+    if (frame) frame.srcdoc = EX(data());
+  } catch (err) {
+    say('Failed to load demo: ' + err.message);
+  }
+}
+
+const loadDemoBtn = typeof $ === 'function' ? $('#load-demo-btn') : null;
+if (loadDemoBtn) loadDemoBtn.onclick = () => loadDemoExam();
+
+if (typeof window !== 'undefined' && window.location && window.location.hash === '#demo') {
+  loadDemoExam();
+} else if (typeof tryRestoreSession === 'function') {
+  tryRestoreSession();
+}
+
+// Attach functions to global scope for testing harness compatibility
+window.read = read;
+window.parse = parse;
+window.keyMap = keyMap;
+window.matchQPrefix = matchQPrefix;
+window.opt = opt;
+window.parseInlineOpts = parseInlineOpts;
+window.crop = crop;
+window.toIdx = toIdx;
+window.validate = validate;
+window.EX = EX;
+window.loadDemoExam = loadDemoExam;
+</script></body></html>
