@@ -7,24 +7,6 @@
 [![Zero Dependencies at Runtime](https://img.shields.io/badge/Runtime-Offline%20HTML-blueviolet)]()
 
 ## 🌟 Overview
-
-**Paper to Test** is a web-based examination platform that extracts questions, options, answers, and images from exam PDFs, provides a question editor with an automated quality audit engine, and exports single-file standalone HTML tests that run anywhere offline.
-
-Multiple users can access the website simultaneously without interference: each user's test session, answers, and progress are stored entirely in their own browser (`localStorage` / `sessionStorage`).
-
----
-
-## 🚀 Live Demo
-
-👉 **[Launch Paper to Test on GitHub Pages](https://merothiya.github.io/paper-to-test/)**
-
-*(Click **"⚡ Try Demo Exam"** to instantly test the simulator with a full 200-question medical entrance exam without uploading anything!)*
-
----
-
-## ✨ Features
-
-- **⚡ Instant 1-Click Demo:** Built-in 200 MCQ INI CET exam with 19 subjects, answer keys, and explanations.
 - **📄 Multi-Column & Scanned PDF Parsing:**
   - Auto-detects 1-column, 2-column, and 3-column layouts.
   - Multi-line option joining and horizontal inline options `(A)... (B)... (C)... (D)...`.
@@ -57,7 +39,7 @@ Multiple users can access the website simultaneously without interference: each 
 1. Visit [https://merothiya.github.io/paper-to-test/](https://merothiya.github.io/paper-to-test/)
 2. Choose your Question Paper PDF (and optional separate Answer Key PDF or paste answers).
 3. Set your exam title and duration (minutes).
-4. Click **"Build test"** (or click **"⚡ Try Demo Exam"**).
+4. Click **"Build test"**.
 5. Take the exam right away in the Interactive Player, make edits in the Question Editor, or download `test.html`.
 
 ### Local Execution:
